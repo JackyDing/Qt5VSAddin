@@ -1,0 +1,6 @@
+LIBRARY "Qt5VSVisualizer"
+
+EXPORTS
+
+RemoveQt5Visualizer
+AppendQt5Visualizer

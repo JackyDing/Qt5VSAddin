@@ -1,0 +1,6 @@
+VSWIZARD 7.0
+Wizard=VsWizard.VsWizardEngine.11.0
+
+Param="WIZARD_NAME = Qt5Class"
+Param="ABSOLUTE_PATH = C:\Program Files (x86)\Digia\Qt5VSAddin\wizards\Qt5Class"
+Param="FALLBACK_LCID = 1033"

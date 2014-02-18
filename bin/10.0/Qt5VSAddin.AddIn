@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="Windows-1252" standalone="no"?>
+<Extensibility xmlns="http://schemas.microsoft.com/AutomationExtensibility">
+	<HostApplication>
+		<Name>Microsoft Visual Studio</Name>
+		<Version>10.0</Version>
+	</HostApplication>
+	<Addin>
+		<FriendlyName>Qt5 Add-in 1.2.12</FriendlyName>
+		<Description>Qt5 Add-in 1.2.12</Description>
+		<AboutBoxDetails>This is Visual Studio Add-in component for Qt5. For more information about Qt5, see \r\nhttp://qt.digia.com\r\nCopyright (C) 2012 Digia Plc and/or its subsidiary(-ies)</AboutBoxDetails>
+		<AboutIconData>@AboutIcon</AboutIconData>
+		<Assembly>Qt5VSAddin.dll</Assembly>
+		<FullClassName>Qt5VSAddin.Connect</FullClassName>
+		<LoadBehavior>5</LoadBehavior>
+		<CommandPreload>0</CommandPreload>
+		<CommandLineSafe>1</CommandLineSafe>
+	</Addin>
+</Extensibility>
