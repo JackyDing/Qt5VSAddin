@@ -81,6 +81,38 @@ namespace Digia.Qt5ProjectLib
             return qtProject;
         }
 
+#if VS2013
+        public static VCFile Update(QtProject qtPrj, VCFile vcFile)
+        {
+            qtPrj.VCProject.Save();
+            string prjPath = qtPrj.Project.FullName;
+            string itemPath = vcFile.FullPath;
+            var documents = new List<string>();
+            foreach (Document document in qtPrj.dte.Documents)
+            {
+                if (document.Path != itemPath)
+                {
+                    documents.Add(document.Path);
+                }
+            }
+            instances.Remove(qtPrj.envPro);
+            qtPrj.dte.Solution.Remove(qtPrj.Project);
+            qtPrj.envPro = qtPrj.dte.Solution.AddFromFile(prjPath, false);
+            instances.Add(qtPrj.envPro, qtPrj);
+            foreach (string document in documents)
+            {
+                if (document != itemPath)
+                {
+                    qtPrj.dte.ItemOperations.OpenFile(document);
+                }
+            }
+            qtPrj.dte.ItemOperations.OpenFile(itemPath);
+            qtPrj.vcPro = qtPrj.envPro.Object as VCProject;
+            vcFile = (qtPrj.vcPro.Files as IVCCollection).Item(itemPath) as VCFile;
+            return vcFile;
+        }
+#endif
+
         public static void ClearInstances()
         {
             instances.Clear();
@@ -921,7 +953,12 @@ namespace Digia.Qt5ProjectLib
 #if (VS2010 || VS2012 || VS2013)
                 // Fresh C++ headers don't have a usable custom build tool. We must set the item type first.
                 if (!mocableIsCPP && file.ItemType != "CustomBuild")
+                {
                     file.ItemType = "CustomBuild";
+                }
+#endif
+#if VS2013
+                file = Update(this, file);
 #endif
 
                 foreach (VCFileConfiguration config in (IVCCollection)file.FileConfigurations)
