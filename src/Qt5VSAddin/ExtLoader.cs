@@ -114,7 +114,7 @@ namespace Qt5VSAddin
         {
             VCProject vcproj;
 
-            if (!HelperFunctions.IsQtProject(project))
+            if (!HelperFunctions.IsQt5Project(project))
                 return;
 
             vcproj = project.Object as VCProject;
@@ -139,7 +139,7 @@ namespace Qt5VSAddin
         {
             VCProject vcproj;
 
-            if (!HelperFunctions.IsQtProject(project))
+            if (!HelperFunctions.IsQt5Project(project))
                 return;
 
             vcproj = project.Object as VCProject;

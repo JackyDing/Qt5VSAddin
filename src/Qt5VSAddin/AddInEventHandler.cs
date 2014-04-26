@@ -515,41 +515,43 @@ namespace Qt5VSAddin
                     break;
                 }
             }
-            if (project == null || !HelperFunctions.IsQtProject(project))
+            if (project == null || !HelperFunctions.IsVcProject(project))
                 return;
 
-            QtVersionManager versionManager = QtVersionManager.The();
-            versionManager.SetPlatform(project.ConfigurationManager.ActiveConfiguration.PlatformName);
+            QtVersionManager versionManager = QtVersionManager.The(project.ConfigurationManager.ActiveConfiguration.PlatformName);
 
             if (HelperFunctions.IsQtProject(project))
             {
-                QtProject qtpro = QtProject.Create(project);
-
-                string qtVersion = versionManager.GetProjectQtVersion(project, platform);
-                if (qtVersion == null)
+                if (HelperFunctions.IsQt5Project(project))
                 {
-                    qtVersion = versionManager.GetDefaultVersion();
+                    QtProject qtpro = QtProject.Create(project);
+
+                    string qtVersion = versionManager.GetProjectQtVersion(project, platform);
                     if (qtVersion == null)
                     {
-                        Messages.DisplayCriticalErrorMessage(SR.GetString("ProjectQtVersionNotFoundError", platform));
-                        dte.ExecuteCommand("Build.Cancel", "");
-                        return;
+                        qtVersion = versionManager.GetDefaultVersion();
+                        if (qtVersion == null)
+                        {
+                            Messages.DisplayCriticalErrorMessage(SR.GetString("ProjectQtVersionNotFoundError", platform));
+                            dte.ExecuteCommand("Build.Cancel", "");
+                            return;
+                        }
                     }
-                }
 
-                if (!QtVSIPSettings.GetDisableAutoMocStepsUpdate())
-                {
-                    if (qtpro.ConfigurationRowNamesChanged)
+                    if (!QtVSIPSettings.GetDisableAutoMocStepsUpdate())
                     {
-                        qtpro.UpdateMocSteps(QtVSIPSettings.GetMocDirectory(project));
+                        if (qtpro.ConfigurationRowNamesChanged)
+                        {
+                            qtpro.UpdateMocSteps(QtVSIPSettings.GetMocDirectory(project));
+                        }
                     }
-                }
 
-                // Solution config is given to function to get QTDIR property
-                // set correctly also during batch build
-                qtpro.SetQtEnvironment(qtVersion, solutionConfig);
-                if (QtVSIPSettings.GetLUpdateOnBuild(project))
-                    Translation.RunlUpdate(project);
+                    // Solution config is given to function to get QTDIR property
+                    // set correctly also during batch build
+                    qtpro.SetQtEnvironment(qtVersion, solutionConfig);
+                    if (QtVSIPSettings.GetLUpdateOnBuild(project))
+                        Translation.RunlUpdate(project);
+                }
             }
             else
             {
@@ -581,7 +583,7 @@ namespace Qt5VSAddin
         {
             QtProject qtPro = QtProject.Create(document.ProjectItem.ContainingProject);
 
-            if (!HelperFunctions.IsQtProject(qtPro.VCProject))
+            if (!HelperFunctions.IsQt5Project(qtPro.VCProject))
                 return;
 
             VCFile file = (VCFile)((IVCCollection)qtPro.VCProject.Files).Item(document.FullName);
@@ -734,7 +736,7 @@ namespace Qt5VSAddin
         {
             Project project = HelperFunctions.GetSelectedQtProject(Connect._applicationObject);
             QtProject qtPro = QtProject.Create(project);
-            if (!HelperFunctions.IsQtProject(project))
+            if (!HelperFunctions.IsQt5Project(project))
                 return;
             VCFilter filter = null;
             VCFile vcFile = GetVCFileFromProject(projectItem.Name, qtPro.VCProject);
@@ -967,7 +969,7 @@ namespace Qt5VSAddin
         {
             foreach (Project p in HelperFunctions.ProjectsInSolution(Connect._applicationObject))
             {
-                if (HelperFunctions.IsQtProject(p))
+                if (HelperFunctions.IsQt5Project(p))
                 {
                     RegisterVCProjectEngineEvents(p);
                 }
@@ -985,7 +987,7 @@ namespace Qt5VSAddin
         void RegisterVCProjectEngineEvents()
         {
             foreach (EnvDTE.Project project in HelperFunctions.ProjectsInSolution(dte))
-                if (project != null && HelperFunctions.IsQtProject(project))
+                if (project != null && HelperFunctions.IsQt5Project(project))
                     RegisterVCProjectEngineEvents(project);
         }
 
@@ -1030,7 +1032,7 @@ namespace Qt5VSAddin
                 VCProject vcPrj = vcCfg.project as VCProject;
                 if (vcPrj == null)
                     return;
-                if (!HelperFunctions.IsQtProject(vcPrj))
+                if (!HelperFunctions.IsQt5Project(vcPrj))
                     return;
 
                 if (dispid == dispId_VCCLCompilerTool_UsePrecompiledHeader
@@ -1052,7 +1054,7 @@ namespace Qt5VSAddin
                 VCProject vcPrj = vcFile.project as VCProject;
                 if (vcPrj == null)
                     return;
-                if (!HelperFunctions.IsQtProject(vcPrj))
+                if (!HelperFunctions.IsQt5Project(vcPrj))
                     return;
 
                 if (dispid == dispId_VCFileConfiguration_ExcludedFromBuild)

@@ -280,7 +280,7 @@ namespace Digia.Qt5ProjectLib
 
         public string GetProjectQtVersion(EnvDTE.Project project, string platform)
         {
-            string key = "QtVersion5 " + platform;
+            string key = "Qt5Version " + platform;
             if (!project.Globals.get_VariablePersists(key))
                 return null;
             string version = (string)project.Globals[key];

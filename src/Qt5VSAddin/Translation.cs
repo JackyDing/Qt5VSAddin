@@ -58,7 +58,7 @@ namespace Qt5VSAddin
             {
                 VCProject vcProject = vcFile.project as VCProject;
                 string cmdLine = "";
-                if (HelperFunctions.IsQtProject(vcProject))
+                if (HelperFunctions.IsQt5Project(vcProject))
                 {
                     string options = QtVSIPSettings.GetLReleaseOptions();
                     if (!string.IsNullOrEmpty(options))
@@ -127,7 +127,7 @@ namespace Qt5VSAddin
 
         public static bool RunlUpdate(VCFile vcFile, EnvDTE.Project pro)
         {
-            if (!HelperFunctions.IsQtProject(pro))
+            if (!HelperFunctions.IsQt5Project(pro))
                 return false;
 
             string cmdLine = "";
