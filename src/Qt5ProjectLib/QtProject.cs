@@ -49,6 +49,10 @@ namespace Digia.Qt5ProjectLib
     using System.Windows.Forms;
     using System.Text.RegularExpressions;
     using System.Xml;
+    using System.Linq;
+    using System.Linq.Expressions;
+    using System.Threading;
+    using System.Threading.Tasks;
     using Microsoft.VisualStudio.VCProjectEngine;
 
     /// <summary>
@@ -938,53 +942,85 @@ namespace Digia.Qt5ProjectLib
         /// Adds a moc step to a given file for this project.
         /// </summary>
         /// <param name="file">file</param>
-        public void AddMocStep(VCFile file)
+        public bool AddMocStep(VCFile file)
         {
+            string oldItemType = file.ItemType;
             try
             {
                 string mocFileName = GetMocFileName(file.FullPath);
-                if (mocFileName == null)
-                    return;
 
-                bool hasDifferentMocFilePerConfig = QtVSIPSettings.HasDifferentMocFilePerConfig(envPro);
-                bool hasDifferentMocFilePerPlatform = QtVSIPSettings.HasDifferentMocFilePerPlatform(envPro);
+                if (mocFileName == null)
+                {
+                    return false;
+                }
+
+                bool retry = false;
+
                 bool mocableIsCPP = mocFileName.ToLower().EndsWith(".moc");
 
 #if (VS2010 || VS2012 || VS2013)
-                // Fresh C++ headers don't have a usable custom build tool. We must set the item type first.
-                if (!mocableIsCPP && file.ItemType != "CustomBuild")
+                if (!mocableIsCPP)
                 {
-                    file.ItemType = "CustomBuild";
+                    if (file.ItemType != "CustomBuild")
+                    {
+                        file.ItemType = "CustomBuild";
+                    }
+                    else
+                    {
+                        retry = true;
+                    }
                 }
 #endif
-#if VS2013
-                file = Update(this, file);
-#endif
+
+                #region Add moc for each configuration
+                List<VCCustomBuildTool> tools = new List<VCCustomBuildTool>();
 
                 foreach (VCFileConfiguration config in (IVCCollection)file.FileConfigurations)
                 {
+                    if (!mocableIsCPP)
+                    {
+                        tools.Add(HelperFunctions.GetCustomBuildTool(config));
+                    }
+                }
+
+                if (tools.Any(tool => tool == null))
+                {
+                    return false;
+                }
+
+                bool hasDifferentMocFilePerConfig = QtVSIPSettings.HasDifferentMocFilePerConfig(envPro);
+                bool hasDifferentMocFilePerPlatform = QtVSIPSettings.HasDifferentMocFilePerPlatform(envPro);
+
+                foreach (VCFileConfiguration config in (IVCCollection)file.FileConfigurations)
+                {
+                    string name = ((VCCustomBuildTool)config.Tool).toolName;
                     VCConfiguration vcConfig = config.ProjectConfiguration as VCConfiguration;
                     VCPlatform platform = vcConfig.Platform as VCPlatform;
                     string platformName = platform.Name;
 
                     string mocRelPath = GetRelativeMocFilePath(file.FullPath, vcConfig.ConfigurationName, platformName);
-                    string subfilterName = null;
-                    if (mocRelPath.Contains(vcConfig.ConfigurationName))
-                        subfilterName = vcConfig.ConfigurationName;
+                    string platformFilterName = null;
+                    string configFilterName = null;
+
+                    string temp = config.Evaluate("$(QTDIR)");
+
                     if (mocRelPath.Contains(platformName))
                     {
-                        if (subfilterName != null)
-                            subfilterName += '_';
-                        subfilterName += platformName;
+                        platformFilterName = platformName;
                     }
+
+                    if (mocRelPath.Contains(vcConfig.ConfigurationName))
+                    {
+                        configFilterName = vcConfig.ConfigurationName;
+                    }
+
                     VCFile mocFile = GetFileFromProject(mocRelPath);
                     if (mocFile == null)
                     {
                         FileInfo fi = new FileInfo(this.VCProject.ProjectDirectory + "\\" + mocRelPath);
                         if (!fi.Directory.Exists)
                             fi.Directory.Create();
-                        mocFile = AddFileInSubfilter(Filters.GeneratedFiles(), subfilterName,
-                            mocRelPath);
+                        mocFile = AddFileInSubfilter(Filters.GeneratedFiles(), platformFilterName, configFilterName, mocRelPath);
 #if (VS2010 || VS2012 || VS2013)
                         if (mocFileName.ToLower().EndsWith(".moc"))
                         {
@@ -996,9 +1032,12 @@ namespace Digia.Qt5ProjectLib
                     }
 
                     if (mocFile == null)
+                    {
                         throw new Qt5VSException(SR.GetString("QtProject_CannotAddMocStep", file.FullPath));
+                    }
 
                     VCCustomBuildTool tool = null;
+
                     string fileToMoc = null;
                     if (!mocableIsCPP)
                     {
@@ -1011,9 +1050,11 @@ namespace Digia.Qt5ProjectLib
                         tool = HelperFunctions.GetCustomBuildTool(mocConf);
                         fileToMoc = HelperFunctions.GetRelativePath(vcPro.ProjectDirectory, file.FullPath);
                     }
-                    if (tool == null)
-                        throw new Qt5VSException(SR.GetString("QtProject_CannotFindCustomBuildTool", file.FullPath));
 
+                    if (tool == null)
+                    {
+                        throw new Qt5VSException(SR.GetString("QtProject_CannotFindCustomBuildTool", file.FullPath));
+                    }
 
                     if (hasDifferentMocFilePerPlatform && hasDifferentMocFilePerConfig)
                     {
@@ -1094,7 +1135,7 @@ namespace Digia.Qt5ProjectLib
                     }
 
                     string dps = tool.AdditionalDependencies;
-                    if (dps.IndexOf("\"" + Resources.moc4Command + "\"") < 0) 
+                    if (dps.IndexOf("\"" + Resources.moc4Command + "\"") < 0)
                     {
                         if (dps.Length > 0 && !dps.EndsWith(";"))
                             dps += ";";
@@ -1119,7 +1160,7 @@ namespace Digia.Qt5ProjectLib
                         if (matchList[0].Length > 0)
                         {
                             outputMocFile = matchList[0].ToString();
-                        } 
+                        }
                         else if (matchList[1].Length > 1)
                         {
                             outputMocFile = matchList[1].ToString();
@@ -1127,7 +1168,7 @@ namespace Digia.Qt5ProjectLib
                         if (outputMocFile.StartsWith("\""))
                             outputMocFile = outputMocFile.Substring(1);
                         if (outputMocFile.EndsWith("\""))
-                            outputMocFile = outputMocFile.Substring(0, outputMocFile.Length-1);
+                            outputMocFile = outputMocFile.Substring(0, outputMocFile.Length - 1);
                         string outputMocPath = Path.GetDirectoryName(outputMocFile);
                         string stringToReplace = Path.GetFileName(outputMocFile);
                         outputMocMacro = outputMocPath + "\\" + stringToReplace.Replace(baseFileName, ProjectMacros.Name);
@@ -1242,9 +1283,13 @@ namespace Digia.Qt5ProjectLib
                         tool.CommandLine = newCmdLine;
                     }
                 }
+
+                return true;
+                #endregion
             }
             catch
             {
+                file.ItemType = oldItemType;
                 throw new Qt5VSException(SR.GetString("QtProject_CannotAddMocStep", file.FullPath));
             }
         }
@@ -1690,10 +1735,15 @@ namespace Digia.Qt5ProjectLib
             if (vcfilter == null)
                 vcfilter = FindFilterFromName(filter.Name);
 
-            if (vcfilter == null) 
+            if (vcfilter == null)
                 return null;
 
-            try 
+            return GetFileFromFilter(vcfilter, fileName);
+        }
+
+        public VCFile GetFileFromFilter(VCFilter filter, string fileName)
+        {
+            try
             {
                 FileInfo fi = null;
                 if (Path.IsPathRooted(fileName))
@@ -1702,15 +1752,19 @@ namespace Digia.Qt5ProjectLib
                     fi = new FileInfo(ProjectDir + "\\" + fileName);
 
                 if (fi == null)
+                {
                     return null;
-                
-                foreach (VCFile file in (IVCCollection)vcfilter.Files)
+                }
+
+                foreach (VCFile file in (IVCCollection)filter.Files)
                 {
                     if (file.MatchName(fi.FullName, true))
                         return file;
                 }
             }
-            catch {}
+            catch
+            {
+            }
             return null;
         }
 
@@ -1830,47 +1884,47 @@ namespace Digia.Qt5ProjectLib
         /// <returns>A VCFile object of the added file.</returns>
         public VCFile AddFileInFilter(FakeFilter filter, string fileName, bool checkForDuplicates)
         {
-            return AddFileInSubfilter(filter, null, fileName, checkForDuplicates);
+            return AddFileInSubfilter(filter, null, null, fileName, checkForDuplicates);
         }
 
-        public VCFile AddFileInSubfilter(FakeFilter filter, string subfilterName, string fileName)
+        public VCFile AddFileInSubfilter(FakeFilter filter, string platformFiliter, string configFilter, string fileName)
         {
-            return AddFileInSubfilter(filter, subfilterName, fileName, false);
+            return AddFileInSubfilter(filter, platformFiliter, configFilter, fileName, false);
         }
 
-        public VCFile AddFileInSubfilter(FakeFilter filter, string subfilterName, string fileName, bool checkForDuplicates)
+        public VCFile AddFileInSubfilter(FakeFilter filter, string platformFiliterName, string configFilterName, string fileName, bool checkForDuplicates)
         {
-            try 
+            try
             {
-                VCFilter vfilt = FindFilterFromGuid(filter.UniqueIdentifier);
-                if (vfilt == null) 
+                VCFilter defaultFilter = FindFilterFromGuid(filter.UniqueIdentifier);
+                if (defaultFilter == null)
                 {
-                    if (!vcPro.CanAddFilter(filter.Name)) 
+                    if (!vcPro.CanAddFilter(filter.Name))
                     {
                         // check if user already created this filter... then add guid
-                        vfilt = FindFilterFromName(filter.Name);
-                        if (vfilt == null)
+                        defaultFilter = FindFilterFromName(filter.Name);
+                        if (defaultFilter == null)
                             throw new Qt5VSException(SR.GetString("QtProject_CannotAddFilter", filter.Name));
                     }
                     else
                     {
-                        vfilt = (VCFilter)vcPro.AddFilter(filter.Name);
+                        defaultFilter = (VCFilter)vcPro.AddFilter(filter.Name);
                     }
 
-                    vfilt.UniqueIdentifier = filter.UniqueIdentifier;
-                    vfilt.Filter = filter.Filter;
-                    vfilt.ParseFiles = filter.ParseFiles;
+                    defaultFilter.UniqueIdentifier = filter.UniqueIdentifier;
+                    defaultFilter.Filter = filter.Filter;
+                    defaultFilter.ParseFiles = filter.ParseFiles;
                 }
-
-                if (!string.IsNullOrEmpty(subfilterName))
+                VCFilter plaformFilter = null;
+                if (!string.IsNullOrEmpty(platformFiliterName))
                 {
-                    string lowerSubFilterName = subfilterName.ToLower();
+                    string lowerSubFilterName = platformFiliterName.ToLower();
                     bool subfilterFound = false;
-                    foreach (VCFilter subfilt in vfilt.Filters as IVCCollection)
+                    foreach (VCFilter subfilt in defaultFilter.Filters as IVCCollection)
                     {
                         if (subfilt.Name.ToLower() == lowerSubFilterName)
                         {
-                            vfilt = subfilt;
+                            plaformFilter = subfilt;
                             subfilterFound = true;
                             break;
                         }
@@ -1878,12 +1932,12 @@ namespace Digia.Qt5ProjectLib
                     if (subfilterFound)
                     {
                         // Do filter names differ in upper/lower case?
-                        if (subfilterName != vfilt.Name)
+                        if (platformFiliterName != plaformFilter.Name)
                         {
                             try
                             {
                                 // Try to rename the filter for aesthetic reasons.
-                                vfilt.Name = subfilterName;
+                                plaformFilter.Name = platformFiliterName;
                             }
                             catch
                             {
@@ -1891,19 +1945,65 @@ namespace Digia.Qt5ProjectLib
                             }
                         }
                     }
-                    if (!subfilterFound)
+                    else
                     {
-                        if (!vfilt.CanAddFilter(subfilterName))
+                        if (!defaultFilter.CanAddFilter(platformFiliterName))
                         {
                             throw new Qt5VSException(SR.GetString("QtProject_CannotAddFilter", filter.Name));
                         }
                         else
                         {
-                            vfilt = (VCFilter)vfilt.AddFilter(subfilterName);
+                            plaformFilter = (VCFilter)defaultFilter.AddFilter(platformFiliterName);
                         }
 
-                        vfilt.Filter = "cpp;moc";
-                        vfilt.SourceControlFiles = false;
+                        plaformFilter.Filter = "cpp;moc";
+                        plaformFilter.SourceControlFiles = false;
+                    }
+                }
+                VCFilter configFilter = null;
+                if (!string.IsNullOrEmpty(configFilterName))
+                {
+                    VCFilter parentFilter = (plaformFilter == null) ? defaultFilter : plaformFilter;
+                    string lowerSubFilterName = configFilterName.ToLower();
+                    bool subfilterFound = false;
+                    foreach (VCFilter subfilt in parentFilter.Filters as IVCCollection)
+                    {
+                        if (subfilt.Name.ToLower() == lowerSubFilterName)
+                        {
+                            configFilter = subfilt;
+                            subfilterFound = true;
+                            break;
+                        }
+                    }
+                    if (subfilterFound)
+                    {
+                        // Do filter names differ in upper/lower case?
+                        if (configFilterName != configFilter.Name)
+                        {
+                            try
+                            {
+                                // Try to rename the filter for aesthetic reasons.
+                                configFilter.Name = configFilterName;
+                            }
+                            catch
+                            {
+                                // Renaming didn't work. We don't care.
+                            }
+                        }
+                    }
+                    else
+                    {
+                        if (!parentFilter.CanAddFilter(configFilterName))
+                        {
+                            throw new Qt5VSException(SR.GetString("QtProject_CannotAddFilter", filter.Name));
+                        }
+                        else
+                        {
+                            configFilter = (VCFilter)parentFilter.AddFilter(configFilterName);
+                        }
+
+                        configFilter.Filter = "cpp;moc";
+                        configFilter.SourceControlFiles = false;
                     }
                 }
 
@@ -1915,12 +2015,47 @@ namespace Digia.Qt5ProjectLib
                         return vcFile;
                 }
 
-                if (vfilt.CanAddFile(fileName))
-                    return (VCFile)(vfilt.AddFile(fileName));
-                else
-                    throw new Qt5VSException(SR.GetString("QtProject_CannotAddFile", fileName));
+                VCFilter targetFilter = defaultFilter;
+                if (configFilter != null)
+                    targetFilter = configFilter;
+                else if (plaformFilter != null)
+                    targetFilter = plaformFilter;
+
+                string targetFilterGuid = targetFilter.UniqueIdentifier;
+
+                try
+                {
+                    if (targetFilter.CanAddFile(fileName))
+                    {
+                        return (VCFile)(targetFilter.AddFile(fileName));
+                    }
+                }
+                catch
+                {
+
+                }
+
+                while ((targetFilter = FindFilterFromGuid(targetFilterGuid)) != null)
+                {
+                    try
+                    {
+                        if (targetFilter.CanAddFile(fileName))
+                        {
+                            return (VCFile)(targetFilter.AddFile(fileName));
+                        }
+                        else
+                        {
+                            return GetFileFromFilter(targetFilter, fileName);
+                        }
+                    }
+                    catch
+                    {
+                    }
+                }
+
+                throw new Qt5VSException(SR.GetString("QtProject_CannotAddFile", fileName));
             }
-            catch 
+            catch
             {
                 throw new Qt5VSException(SR.GetString("QtProject_CannotAddFile", fileName));
             }
